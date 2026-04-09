@@ -1,0 +1,101 @@
+name: DriftGuard — Drift Detection
+
+on:
+  # Täglich um 6 Uhr morgens
+  schedule:
+    - cron: '0 6 * * *'
+  # Manuell triggern
+  workflow_dispatch:
+  # Nach jedem Push auf main (optional)
+  push:
+    branches: [main]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+
+jobs:
+  drift-check:
+    name: OpenTofu Plan + DriftGuard Analyse
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC Auth
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.7.0"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install DriftGuard Dependencies
+        run: pip install -r src/requirements.txt
+
+      - name: OpenTofu Init
+        run: tofu init
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: OpenTofu Plan (JSON Output für DriftGuard)
+        run: tofu plan -json > plan.json
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: DriftGuard Analyse
+        id: driftguard
+        run: |
+          python3 src/analyzer.py plan.json --output drift-report.md
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        continue-on-error: true  # Exit code 2 = Drift gefunden, aber kein Fehler
+
+      - name: Upload Drift Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drift-report
+          path: drift-report.md
+          retention-days: 30
+
+      - name: Summary in GitHub Actions
+        if: always()
+        run: |
+          echo "## DriftGuard Report" >> $GITHUB_STEP_SUMMARY
+          cat drift-report.md >> $GITHUB_STEP_SUMMARY
+
+      # Optional: bei CRITICAL/HIGH Drift eine Issue erstellen
+      - name: GitHub Issue bei kritischem Drift
+        if: steps.driftguard.outputs.exit_code == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('drift-report.md', 'utf8');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 DriftGuard: Kritischer Drift erkannt — ${new Date().toISOString().split('T')[0]}`,
+              body: report.substring(0, 65000), // GitHub Issue limit
+              labels: ['drift', 'infrastructure']
+            });

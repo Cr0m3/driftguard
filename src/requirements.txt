@@ -1,0 +1,12 @@
+# DriftGuard dependencies
+anthropic>=0.40.0          # Claude API SDK
+python-hcl2>=4.3.0         # HCL parsing (for future fix-generation)
+
+# Azure integration (azure_audit.py — Phase 2)
+azure-identity>=1.17.0
+azure-mgmt-monitor>=6.0.0
+azure-mgmt-resource>=23.0.0
+
+# Dev / testing
+pytest>=8.0.0
+pytest-mock>=3.12.0
