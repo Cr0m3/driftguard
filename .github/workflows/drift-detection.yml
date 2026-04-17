@@ -17,13 +17,35 @@ jobs:
   drift-check:
     name: OpenTofu Plan + DriftGuard Analyse
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       id-token: write   # OIDC Auth
       contents: read
+      issues: write     # GitHub Issue bei kritischem Drift
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate Required Secrets
+        run: |
+          missing=()
+          [ -z "$AZURE_CLIENT_ID" ]       && missing+=("AZURE_CLIENT_ID")
+          [ -z "$AZURE_TENANT_ID" ]       && missing+=("AZURE_TENANT_ID")
+          [ -z "$AZURE_SUBSCRIPTION_ID" ] && missing+=("AZURE_SUBSCRIPTION_ID")
+          [ -z "$ANTHROPIC_API_KEY" ]     && missing+=("ANTHROPIC_API_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "❌ Missing required secrets: ${missing[*]}"
+            echo "Configure them in: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "✅ All required secrets are present"
+        env:
+          AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Azure Login via OIDC
         uses: azure/login@v2

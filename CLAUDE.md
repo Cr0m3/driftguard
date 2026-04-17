@@ -19,3 +19,9 @@ Vergleicht IaC-Soll-Zustand mit Cloud-Ist-Zustand.
 - Keine Cloud-Credentials im Code, nur env vars
 - Alle Azure-Calls read-only (keine Write-Permissions)
 - Jede Funktion hat einen Docstring
+
+## MemPalace
+
+- **Wing:** `driftguard`
+- **Rooms:** `context`, `decisions`, `architecture`, `status`, `bugs`
+- **Tunnel:** linked to `aws-terraform` (IaC being monitored)
